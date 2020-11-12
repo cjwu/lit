@@ -19,6 +19,7 @@
 // taze: ResizeObserver from //third_party/javascript/typings/resize_observer_browser
 import * as d3 from 'd3';
 import {customElement, html, property, svg} from 'lit-element';
+import {styleMap} from 'lit-html/directives/style-map';
 import {computed, observable} from 'mobx';
 // tslint:disable-next-line:ban-module-namespace-object-escape
 const seedrandom = require('seedrandom');  // from //third_party/javascript/typings/seedrandom:bundle
@@ -57,7 +58,8 @@ export class ScalarModule extends LitModule {
   static maxPlotWidth = 900;
   static minPlotHeight = 100;
   static maxPlotHeight = 250;  // too sparse if taller than this
-  static plotBottomMargin = 35;
+  static plotTopMargin = 6;
+  static plotBottomMargin = 20;
   static plotLeftMargin = 5;
   static xLabelOffsetY = 30;
   static yLabelOffsetX = -32;
@@ -83,6 +85,7 @@ export class ScalarModule extends LitModule {
   // there are multiple pred keys).
   private readonly brushObjects: BrushObject[] = [];
 
+  @observable private readonly isPlotHidden = new Map();
   @observable private preds: Preds[] = [];
   @observable private plotWidth = ScalarModule.maxPlotWidth;
   @observable private plotHeight = ScalarModule.minPlotHeight;
@@ -359,7 +362,9 @@ export class ScalarModule extends LitModule {
       }
     }
     return d3.scaleLinear().domain(scoreRange).range([
-      this.plotHeight - ScalarModule.plotBottomMargin, 0
+      this.plotHeight - ScalarModule.plotBottomMargin -
+          ScalarModule.plotTopMargin,
+      ScalarModule.plotTopMargin
     ]);
   }
 
@@ -403,11 +408,13 @@ export class ScalarModule extends LitModule {
       // Create threshold marker.
       thresholdSelection.append('line')
           .attr('x1', xScale(threshold))
-          .attr('y1', yScale(0))
+          .attr('y1', yScale(ScalarModule.plotTopMargin))
           .attr('x2', xScale(threshold))
           .attr(
               'y2',
-              yScale(this.plotHeight - ScalarModule.plotBottomMargin))
+              yScale(
+                  this.plotHeight - ScalarModule.plotBottomMargin -
+                  ScalarModule.plotTopMargin))
           .style('stroke', 'black');
     }
   }
@@ -456,7 +463,8 @@ export class ScalarModule extends LitModule {
     // div instead of estimating from the full module container.
     const perRowMargin = 15;  // should match .plot_holder margin-bottom in css
     const proposedPlotHeight =
-        (container.offsetHeight - ScalarModule.plotBottomMargin) /
+        (container.offsetHeight - ScalarModule.plotBottomMargin -
+         ScalarModule.plotTopMargin) /
             scatterplots.length -
         perRowMargin;
     this.plotHeight = Math.min(
@@ -481,8 +489,8 @@ export class ScalarModule extends LitModule {
           .attr('id', 'threshold')
           .attr(
               'transform',
-              'translate(' + ScalarModule.plotLeftMargin.toString() +
-                  ',0)');
+              'translate(' + ScalarModule.plotLeftMargin.toString() + ',' +
+                  ScalarModule.plotTopMargin.toString() + ')');
       this.updateThreshold();
 
       // Add group for data points.
@@ -491,8 +499,8 @@ export class ScalarModule extends LitModule {
           .attr('id', 'dataPoints')
           .attr(
               'transform',
-              'translate(' + ScalarModule.plotLeftMargin.toString() +
-                  ',0)');
+              'translate(' + ScalarModule.plotLeftMargin.toString() + ',' +
+                  ScalarModule.plotTopMargin.toString() + ')');
 
       // Add group for overlaying selected points.
       d3.select(scatterplot)
@@ -500,8 +508,8 @@ export class ScalarModule extends LitModule {
           .attr('id', 'overlay')
           .attr(
               'transform',
-              'translate(' + ScalarModule.plotLeftMargin.toString() +
-                  ',0)');
+              'translate(' + ScalarModule.plotLeftMargin.toString() + ',' +
+                  ScalarModule.plotTopMargin.toString() + ')');
 
       // Add group for overlaying primary selected points.
       d3.select(scatterplot)
@@ -509,8 +517,8 @@ export class ScalarModule extends LitModule {
           .attr('id', 'primaryOverlay')
           .attr(
               'transform',
-              'translate(' + ScalarModule.plotLeftMargin.toString() +
-                  ',0)');
+              'translate(' + ScalarModule.plotLeftMargin.toString() + ',' +
+                  ScalarModule.plotTopMargin.toString() + ')');
 
       this.updateAllScatterplotColors(scatterplot);
     }
@@ -528,7 +536,6 @@ export class ScalarModule extends LitModule {
       if (key == null || label == null) {
         return;
       }
-      const axisTitle = (item as HTMLElement).dataset['axisTitle'] ?? key;
 
       const spec = this.appState.getModelSpec(this.model);
       const isScalarKey = isLitSubtype(spec.output[key], 'Scalar');
@@ -557,10 +564,8 @@ export class ScalarModule extends LitModule {
           .attr('id', 'xAxis')
           .attr(
               'transform',
-              'translate(' + ScalarModule.plotLeftMargin.toString() +
-                  ',' +
-                  (this.plotHeight - ScalarModule.plotBottomMargin)
-                      .toString() +
+              'translate(' + ScalarModule.plotLeftMargin.toString() + ',' +
+                  (this.plotHeight - ScalarModule.plotBottomMargin).toString() +
                   ')')
           .call(d3.axisBottom(xScale));
 
@@ -577,22 +582,9 @@ export class ScalarModule extends LitModule {
           .attr('id', 'yAxis')
           .attr(
               'transform',
-              'translate(' + ScalarModule.plotLeftMargin.toString() +
-                  ', 0)')
+              'translate(' + ScalarModule.plotLeftMargin.toString() + ',' +
+                  ScalarModule.plotTopMargin.toString() + ')')
           .call(axisGenerator);
-
-      // Create x axis label.
-      d3.select(scatterplot)
-          .append('text')
-          .attr(
-              'transform',
-              'translate(' + (this.plotWidth / 2).toString() + ' ,' +
-                  (this.plotHeight - ScalarModule.plotBottomMargin +
-                   ScalarModule.xLabelOffsetY)
-                      .toString() +
-                  ')')
-          .style('text-anchor', 'middle')
-          .text(axisTitle);
 
       // Create y axis label for regression models, where error is on the y
       // axis.
@@ -602,11 +594,11 @@ export class ScalarModule extends LitModule {
             .attr(
                 'transform',
                 'translate(' +
-                    (ScalarModule.plotLeftMargin +
-                     ScalarModule.yLabelOffsetX)
+                    (ScalarModule.plotLeftMargin + ScalarModule.yLabelOffsetX)
                         .toString() +
                     ', ' +
-                    (this.plotHeight / 2 + ScalarModule.yLabelOffsetY)
+                    (ScalarModule.plotTopMargin + this.plotHeight / 2 +
+                     ScalarModule.yLabelOffsetY)
                         .toString() +
                     ') rotate(270)')
             .style('text-anchor', 'middle')
@@ -623,12 +615,14 @@ export class ScalarModule extends LitModule {
               .attr('x1', ScalarModule.plotLeftMargin)
               .attr(
                   'y1',
-                  (this.plotHeight - ScalarModule.plotBottomMargin) /
+                  (this.plotHeight - ScalarModule.plotBottomMargin -
+                   ScalarModule.plotTopMargin) /
                       2)
               .attr('x2', this.plotWidth + ScalarModule.plotLeftMargin)
               .attr(
                   'y2',
-                  (this.plotHeight - ScalarModule.plotBottomMargin) /
+                  (this.plotHeight - ScalarModule.plotBottomMargin -
+                   ScalarModule.plotTopMargin) /
                       2)
               .style('stroke', ScalarModule.zeroLineColor);
         }
@@ -640,7 +634,7 @@ export class ScalarModule extends LitModule {
           (isScalarKey && hasRegressionGroundTruth) ? d3.brush() : d3.brushX();
       newBrush
           .extent([
-            [0, 0],
+            [0, ScalarModule.plotTopMargin],
             [
               this.plotWidth - ScalarModule.plotLeftMargin,
               this.plotHeight - ScalarModule.plotBottomMargin
@@ -795,12 +789,24 @@ export class ScalarModule extends LitModule {
   renderPlot(key: string, label: string) {
     const axisTitle = label ? `${key}:${label}` : key;
     // clang-format off
+    const toggleCollapse = () => {
+      const isHidden = this.isPlotHidden.get(axisTitle);
+      this.isPlotHidden.set(axisTitle, isHidden ? false: true);
+    };
+    const scatterplotStyle = styleMap(
+        {'display': `${this.isPlotHidden.get(axisTitle) ? 'none': 'block'}`});
     return html`
-        <div class='plot-holder'>${svg`
-          <svg class='scatterplot' data-key='${key}'
-                                   data-label='${label}'
-                                   data-axis-title='${axisTitle}'>
-          </svg>`}
+        <div class='plot-holder'>
+          <div class='collapse-bar' @click=${toggleCollapse}>${axisTitle}
+            <mwc-icon class="icon-button min-button">
+              ${this.isPlotHidden.get(axisTitle) ? 'expand_more': 'expand_less'}
+            </mwc-icon>
+          </div>
+          <div class='scatterplot-background' style=${scatterplotStyle}>
+            ${svg`<svg class='scatterplot' data-key='${key}' 
+                data-label='${label}'>
+            </svg>`}
+          </div>
         </div>
       `;
     // clang-format on
