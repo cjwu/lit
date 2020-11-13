@@ -99,16 +99,11 @@ export class LitMainMenu extends MobxLitElement {
     const selectAllChildrenCallback = () => {
       this.selectionService.selectIds([...this.findAllChildren()]);
     };
-    const selectAllFavoritedCallback = () => {
-      this.sliceService.selectNamedSlice(FAVORITES_SLICE_NAME);
-    };
     const selectNone = () => {
       this.selectionService.selectIds([]);
     };
     const noAction = () => {};
 
-    const hasStarredPoints =
-        !this.sliceService.isSliceEmpty(FAVORITES_SLICE_NAME);
     const hasParents = this.findAllParents().length > 1;
     const hasChildren = this.findAllChildren().length > 1;
     const hasRelatives = hasParents || hasChildren;
@@ -116,7 +111,7 @@ export class LitMainMenu extends MobxLitElement {
 
     return [
       {
-        itemText: 'Random datapoint',
+        itemText: 'Random',
         displayIcon: false,
         menu: [],
         onClick: selectRandomDatapoint,
@@ -131,26 +126,20 @@ export class LitMainMenu extends MobxLitElement {
         disabled: !hasRelatives,
       },
       {
-        itemText: 'Parent datapoints',
+        itemText: 'Parents',
         displayIcon: false,
         menu: [],
         onClick: hasParents ? selectAllParentsCallback : noAction,
         disabled: !hasParents,
       },
       {
-        itemText: 'Children datapoints',
+        itemText: 'Children',
         displayIcon: false,
         menu: [],
         onClick: hasChildren ? selectAllChildrenCallback : noAction,
         disabled: !hasChildren,
       },
-      {
-        itemText: 'Favorite datapoints',
-        displayIcon: false,
-        menu: [],
-        onClick: hasStarredPoints ? selectAllFavoritedCallback : noAction,
-        disabled: !hasStarredPoints
-      },
+      this.getSliceItem(),
       // TODO(lit-dev): Add find siblings option.
       {
         itemText: 'Clear selection',
@@ -182,7 +171,7 @@ export class LitMainMenu extends MobxLitElement {
   }
 
   // Returns items for the slice menu.
-  getSliceItems() {
+  getSliceItem() {
     const sliceNames = Array.from(this.sliceService.namedSlices.keys());
     const sliceItems = sliceNames.map((name) => {
       const isSelected = this.sliceService.selectedSliceName === name;
@@ -197,23 +186,20 @@ export class LitMainMenu extends MobxLitElement {
       };
     });
 
-    return [
-      {
-        itemText: 'Select slice',
-        displayIcon: false,
-        menu: sliceItems,
-        onClick: () => {},
-        disabled: false,
-      },
-    ];
+    return {
+      itemText: 'Select slice',
+      displayIcon: false,
+      menu: sliceItems,
+      onClick: () => {},
+      disabled: false,
+    };
   }
 
   // Returns menu data for the menu toolbar.
   getMenuData() {
     const menuData = new Map<string, MenuItem[]>();
-    menuData.set('Select', this.getSelectItems());
+    menuData.set('Select datapoint', this.getSelectItems());
     menuData.set('Color by', this.getColorOptionItems());
-    menuData.set('Slices', this.getSliceItems());
     return menuData;
   }
 
@@ -284,12 +270,9 @@ export class LitMainToolbar extends MobxLitElement {
     };
     // clang-format off
     return html`
-      <button id='select-random-button' class='text-button'
+      <button id='select-random-button' class='hairline-button'
         @click=${selectRandom}>
-        <mwc-icon class='mdi-outlined icon-button' id='select-random-icon'>
-          casino
-        </mwc-icon>
-        <span id='select-random-text'>Select Random</span>
+        <span id='select-random-text'>Select random datapoint</span>
       </button>
     `;
     // clang-format on
@@ -300,7 +283,7 @@ export class LitMainToolbar extends MobxLitElement {
    * Controls to page through the dataset.
    * Assume exactly one point is selected.
    */
-  renderSelectionArrows() {
+  renderSelectionArrows(numSelected: number, numTotal: number) {
     const primaryId = this.selectionService.primarySelectedId;
     const selectedIndex =
         this.appState.currentInputData.findIndex(ex => ex.id === primaryId);
@@ -313,18 +296,20 @@ export class LitMainToolbar extends MobxLitElement {
       const nextId = this.appState.currentInputData[nextIndex].id;
       this.selectionService.selectIds([nextId]);
     };
+    const arrowsDisabled = numSelected === 0;
+    const iconClass =
+        classMap({'icon-button': true, 'disabled': arrowsDisabled});
     // clang-format off
     return html`
-      <mwc-icon class='icon-button' id='ds-select-prev'
-        @click=${() => {selectOffset(-1);}}>
+      <mwc-icon class=${iconClass} id='ds-select-prev'
+        @click=${arrowsDisabled ? null: () => {selectOffset(-1);}}>
         chevron_left
       </mwc-icon>
-      <mwc-icon class='icon-button mdi-outlined' id='ds-select-random'
-        @click=${() => {selectOffset(randInt(1, numExamples));}}>
-        casino
-      </mwc-icon>
-      <mwc-icon class='icon-button' id='ds-select-next'
-        @click=${() => {selectOffset(1);}}>
+      <div id='number-selected'>
+        ${numSelected} of ${numTotal} selected
+      </div>
+      <mwc-icon class=${iconClass} id='ds-select-next'
+        @click=${arrowsDisabled ? null: () => {selectOffset(1);}}>
         chevron_right
       </mwc-icon>
     `;
@@ -356,7 +341,7 @@ export class LitMainToolbar extends MobxLitElement {
     return html`
       <div id='primary-selection-status' class='selection-status-group'>
         <span id='primary-text'>
-          (primary:&nbsp;<span class='monospace'> ${displayedPrimaryId}</span>
+          primary:&nbsp;<span class='monospace'> ${displayedPrimaryId}</span>
           ... [${primaryIndex}]
         </span>
         ${numSelected > 1 ? html`
@@ -373,7 +358,6 @@ export class LitMainToolbar extends MobxLitElement {
             chevron_right
           </mwc-icon>
         ` : null}
-         ${this.renderFavoriteButton()} )
       </div>
     `;
     // clang-format on
@@ -450,18 +434,20 @@ export class LitMainToolbar extends MobxLitElement {
     // clang-format on
   }
 
-  renderFavoriteButton() {
+  renderFavoriteButton(numSelected: number) {
     const primarySelectedInputData =
         this.selectionService.primarySelectedInputData;
-    if (primarySelectedInputData == null) {
-      return;
+    if (primarySelectedInputData != null) {
+      this.highlightFavorite = primarySelectedInputData.meta['isFavorited'];
     }
-    this.highlightFavorite = primarySelectedInputData.meta['isFavorited'];
+
+    const disabled = numSelected === 0;
+    const iconClass = classMap({'icon-button': true, 'disabled': disabled});
 
     const favoriteOnClick = () => {
       this.toggleFavorited();
     };
-    return html`<mwc-icon class='icon-button' id='favorite-button' @click=${
+    return html`<mwc-icon class=${iconClass} id='favorite-button' @click=${
         favoriteOnClick}>
             ${this.highlightFavorite ? 'favorite' : 'favorite_border'}
           </mwc-icon>`;
@@ -487,23 +473,22 @@ export class LitMainToolbar extends MobxLitElement {
         <div id='toggle-example-comparison'>
           Compare Datapoints
         </div>
-        <mwc-switch @change=${toggleExampleComparison} id='compare-switch'
+        <mwc-switch title=${numSelected === 0 ? 'Select a datapoint to use this feature': ''}
+          @change=${toggleExampleComparison} id='compare-switch'
           ?disabled='${!this.appState.compareExamplesEnabled && numSelected === 0}'
           .checked=${this.appState.compareExamplesEnabled}>
         </mwc-switch>
       </div>
       <div id='right-container'>
-        <div>
-          ${numSelected} of ${numTotal} selected
-        </div>
-        ${numSelected === 0 ? this.renderLuckyButton() : null}
-        ${numSelected === 1 ? this.renderSelectionArrows() : null}
         ${primaryId !== null ? this.renderPrimarySelectControls() :  null}
+        ${this.renderFavoriteButton(numSelected)}
+        ${this.renderSelectionArrows(numSelected, numTotal)}
         ${this.appState.compareExamplesEnabled ? this.renderPairControls() : null}
         <button id="clear-selection" class="text-button" @click=${clearSelection}
           ?disabled="${numSelected === 0}">
           Clear selection
         </button>
+        ${this.renderLuckyButton()}
       </div>
     </div>
     `;
